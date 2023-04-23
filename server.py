@@ -5,6 +5,7 @@ import sqlite3
 import io
 from random import choice, randint
 from autocorrect import Speller
+import os
 
 translator = Translator()
 lang = "en"
@@ -77,6 +78,51 @@ async def add_words(message: types.Message):
         await message.answer(f"Пишите мне слова, а я добавлю их в ваш личный словарь")
     else:
         await message.answer(f"Вы и так находитесь в режиме добавления слов в словарь")
+
+
+@dp.message_handler(content_types=[types.ContentType.DOCUMENT])
+async def doc_handler(message: types.Message):
+    #json_file = await bot.get_file (message.document.open())
+    #f = open(message.document.text, "r")
+
+    #print(f.read(30))
+
+    #json_file = await bot.get_file (message.document.file_id.file_path)
+    #print(json_file)
+
+    
+    await message.document.download()
+
+
+    
+    file_info = await bot.get_file (message.document.file_id)
+    print(file_info["file_path"])
+    file_path = file_info["file_path"]
+    with open(file_path, "r") as file:
+        words = [word.rstrip() for word in file]
+    for word in words:
+        print(word)
+        try:
+            scr = langid.classify(word)[0]
+            if scr == "en" or scr == "de" or scr == "uk":
+                ans = translator.translate(word, src="en", dest="ru").text
+            else:
+                ans = translator.translate(word, src="ru", dest="en").text
+            user_in = message.from_user.id
+            if scr == "en" or scr == "de" or scr == "uk":
+                user_words = [x[0] for x in cur.execute(f"SELECT en_word FROM words WHERE userid = {message.from_user.id}").fetchall()]
+                if word not in user_words:
+                    cur.execute("INSERT INTO words(userid, en_word, ru_word) VALUES(?, ?, ?);", (user_in, word, ans,))
+                    con.commit()
+            else:
+                user_words = [x[0] for x in cur.execute(f"SELECT en_word FROM words WHERE userid = {message.from_user.id}").fetchall()]
+                if ans.text not in user_words:
+                    cur.execute("INSERT INTO words(userid, en_word, ru_word) VALUES(?, ?, ?);", (user_in, ans.text, word,))
+                    con.commit()
+            os.remove(file_path)
+        except Exception:
+            pass
+
 
 
 @dp.message_handler(commands=["print_dict"])
@@ -154,7 +200,11 @@ async def learning(message: types.Message):
                 for i in range(3):
                     if buttons[i] == "":
                         incorr = choice(words_for_test)
-                        buttons[i] = translator.translate(incorr, src=src, dest=dest).text
+                        if incorr not in buttons:
+                            buttons[i] = translator.translate(incorr, src=src, dest=dest).text
+                        else:
+                            incorr = choice(words_for_test)
+                            buttons[i] = translator.translate(incorr, src=src, dest=dest).text
                 keyboard.add(*buttons)
                 await message.answer(str(test_word), reply_markup=keyboard)
             else:
@@ -250,8 +300,8 @@ async def message_work(message: types.Message):
                     await message.answer(f"Слово {message.text} было успешно добавлено в ваш словарь!")
                 else:
                     await message.answer("Извините, в вашем словаре уже есть это слово!")
-            except Exception:
-                 await message.answer("Что то пошло не так")
+        except Exception:
+             await message.answer("Что то пошло не так")
 
     elif writting_type == "delete":
         try:
@@ -338,6 +388,10 @@ async def message_work(message: types.Message):
                     for i in range(3):
                         if buttons[i] == "":
                             incorr = choice(words_for_test)
+                            if incorr not in buttons:
+                                buttons[i] = translator.translate(incorr, src=src, dest=dest).text
+                            else:
+                                incorr = choice(words_for_test)
                             buttons[i] = translator.translate(incorr, src=src, dest=dest).text
                     keyboard.add(*buttons)
                     await message.answer(str(test_word), reply_markup=keyboard)
